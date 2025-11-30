@@ -739,7 +739,14 @@ export default function Settings({ onClose, ollamaStatus, onRefreshOllama }) {
       models.push(...filteredDirectModels);
     }
 
-    return models.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    // Deduplicate by model ID (prefer direct connections over OpenRouter for same model)
+    // Since direct models are added last, always set to overwrite earlier entries
+    const uniqueModels = new Map();
+    models.forEach(model => {
+      uniqueModels.set(model.id, model);
+    });
+
+    return Array.from(uniqueModels.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   };
 
   // Get filtered models for council member selection (respects free filter)
