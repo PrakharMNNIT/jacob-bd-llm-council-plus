@@ -439,11 +439,17 @@ curl http://localhost:11434/api/tags
 - `frontend/src/components/Stage3.jsx` - Model name parsing, type safety
 - `backend/council.py` - Null filtering, prompt template validation
 
+5. **API Response Type Safety:**
+   - Some providers (Mistral) occasionally return `content` as arrays/objects instead of strings
+   - Added `isinstance()` checks in Stage 1 and Stage 2 processing
+   - Convert non-string content to strings before processing
+   - Added defensive programming in `parse_ranking_from_text()` function
+   - Prevents "expected string or bytes-like object" errors and `[object Object]` display
+
 **Pending Work:**
 - Settings UI refactoring: Decision needed on layout (Sidebar vs. Tabs) to reduce scrolling
 - Optional optimizations: Settings state simplification, request caching
 - Testing: See `BUGS_AND_OPTIMIZATIONS.md` for comprehensive test checklist
-- ReactMarkdown still throwing errors during streaming (investigation ongoing)
 
 ## AI Coding Best Practices (Lessons Learned)
 
