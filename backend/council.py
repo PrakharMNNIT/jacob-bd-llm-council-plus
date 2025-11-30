@@ -149,10 +149,14 @@ Question: {user_query}"""
                                 "error_message": response.get('error_message', 'Unknown error')
                             }
                         else:
-                            # Successful response
+                            # Successful response - ensure content is always a string
+                            content = response.get('content', '')
+                            if not isinstance(content, str):
+                                # Handle case where API returns non-string content (array, object, etc.)
+                                content = str(content) if content is not None else ''
                             result = {
                                 "model": model,
-                                "response": response.get('content', ''),
+                                "response": content,
                                 "error": None
                             }
                     
@@ -272,7 +276,11 @@ async def stage2_collect_rankings(
                                 "error_message": response.get('error_message', 'Unknown error')
                             }
                         else:
+                            # Ensure content is always a string before parsing
                             full_text = response.get('content', '')
+                            if not isinstance(full_text, str):
+                                # Handle case where API returns non-string content (array, object, etc.)
+                                full_text = str(full_text) if full_text is not None else ''
                             parsed = parse_ranking_from_text(full_text)
                             result = {
                                 "model": model,
@@ -394,6 +402,10 @@ def parse_ranking_from_text(ranking_text: str) -> List[str]:
         List of response labels in ranked order
     """
     import re
+
+    # Defensive: ensure ranking_text is a string
+    if not isinstance(ranking_text, str):
+        ranking_text = str(ranking_text) if ranking_text is not None else ''
 
     # Look for "FINAL RANKING:" section
     if "FINAL RANKING:" in ranking_text:
