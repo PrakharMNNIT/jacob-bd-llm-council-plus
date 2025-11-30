@@ -95,13 +95,74 @@ A local AI "Council" application where multiple LLMs (from OpenRouter or local O
     *   Updated Utility Models description to remove mention of conversation titles
     *   Backend no longer uses separate model for title generation
 
-## Next Steps
-*   **Testing:** Verify all fixes work properly (see BUGS_AND_OPTIMIZATIONS.md for test checklist)
-*   **Settings UI Refactoring:** Decide on layout (Sidebar vs. Tabs) and implement to reduce scrolling.
-*   **Optional Future Optimizations:**
-    *   Settings state management simplification (code quality)
-    *   Request caching for repeated queries (performance)
-*   **Conversation Import/Export:** Consider implementing similar import/export for conversations (settings version is complete).
+### Nov 29 (Evening) - Settings UI Sidebar Refactor ✅
+**Implemented by:** Gemini
+
+*   **✅ Sidebar Navigation Layout:**
+    *   Replaced scrolling single-page with **4-section sidebar navigation**
+    *   Sections: **Council Config**, **API Keys**, **System Prompts**, **General & Search**
+    *   Left sidebar (220px) with active state highlighting
+    *   Main content panel scrolls independently
+    *   Eliminates excessive scrolling, improves organization
+    *   **Files:** `frontend/src/components/Settings.jsx`, `frontend/src/components/Settings.css`
+
+*   **✅ Groq Provider Integration:**
+    *   Added **Groq API** as first-class provider (alongside OpenRouter, Ollama, Direct)
+    *   Backend provider: `backend/providers/groq.py` with OpenAI-compatible API
+    *   Models appear with `groq:` prefix (e.g., `groq:llama3-70b-8192`)
+    *   Toggle in "Available Model Sources" section
+    *   API key management in API Keys section with test/validation
+    *   **Rate Limits:** 30 requests/minute, 14,400 requests/day (Llama models)
+    *   **Files:** `backend/providers/groq.py`, `backend/settings.py`, `backend/council.py`, `backend/main.py`, `frontend/src/components/Settings.jsx`
+
+*   **✅ "I'm Feeling Lucky" Button:**
+    *   Randomizes **all models** (council members, chairman, search query generator)
+    *   Respects "Show free only" filter
+    *   Tries to select unique models for council (refills pool when exhausted)
+    *   Auto-sets Remote/Local filters based on selected models
+    *   Purple gradient button (🎲 emoji) below "Show free only" checkbox
+    *   **Files:** `frontend/src/components/Settings.jsx`, `frontend/src/components/Settings.css`
+
+*   **✅ Rate Limit Warning System:**
+    *   **Smart warnings** based on council configuration
+    *   Calculates total requests per run: `(council_members × 2) + 2` (Stage 1, 2, Chairman, Search)
+    *   **OpenRouter warnings:**
+        *   🛑 **Error:** >10 requests/run with 3+ free models (exceeds 20 RPM limit)
+        *   ⚠️ **Warning:** All requests from free OpenRouter (50 RPD limit)
+    *   **Groq warnings:**
+        *   ⚠️ **Caution:** >20 requests/run (approaching 30 RPM limit)
+    *   Visual banners with icons and actionable messages
+    *   **Files:** `frontend/src/components/Settings.jsx`, `frontend/src/components/Settings.css`
+
+*   **✅ UI/UX Improvements:**
+    *   Added `.model-filter-controls` wrapper div for better layout organization
+    *   Fixed "I'm Feeling Lucky" button spacing (moved outside `.model-options-row` to eliminate 16px flex gap)
+    *   Improved council member row styling with cards and consistent spacing
+    *   Enhanced Remote/Local toggle button design
+    *   **Files:** `frontend/src/components/Settings.jsx`, `frontend/src/components/Settings.css`
+
+*   **📊 Code Statistics:**
+    *   Settings.jsx: ~1900 lines (complex but well-organized with sidebar sections)
+    *   Settings.css: Added sidebar styles, rate limit warning styles, lucky button styles
+    *   Backend: Added groq.py (~99 lines), updated settings/council/main for Groq support
+
+## Current Status (Nov 29, 2025 Evening)
+
+**✅ COMPLETED:**
+*   Settings UI sidebar refactoring (4-section navigation)
+*   Groq provider integration (backend + frontend)
+*   "I'm Feeling Lucky" randomization feature
+*   Rate limit warning system
+*   All UI/UX polish and spacing fixes
+
+**📝 RECOMMENDED NEXT STEPS:**
+*   **Testing:** Verify Groq integration, sidebar navigation, "I'm Feeling Lucky" feature work as expected
+*   **Optional Future Enhancements:**
+    *   Settings state management simplification (code quality improvement)
+    *   Request caching for repeated queries (performance optimization)
+    *   Conversation import/export (similar to settings import/export)
+    *   Model performance analytics over time
+    *   Custom ranking criteria (beyond accuracy/insight)
 
 ## Lessons Learned
 

@@ -54,9 +54,9 @@ This fixes binary incompatibilities (e.g., `@rollup/rollup-darwin-*` variants).
 
 **Provider System** (`backend/providers/`)
 - **Base**: `base.py` - Abstract interface for all LLM providers
-- **Implementations**: `openrouter.py`, `ollama.py`, `openai.py`, `anthropic.py`, `google.py`, `mistral.py`, `deepseek.py`
-- **Auto-routing**: Model IDs with prefix (e.g., `openai:gpt-4.1`, `ollama:llama3`) route to correct provider
-- **Fallback**: Unprefixed IDs use `settings.llm_provider` (openrouter/ollama/hybrid)
+- **Implementations**: `openrouter.py`, `ollama.py`, `groq.py`, `openai.py`, `anthropic.py`, `google.py`, `mistral.py`, `deepseek.py`
+- **Auto-routing**: Model IDs with prefix (e.g., `openai:gpt-4.1`, `ollama:llama3`, `groq:llama3-70b-8192`) route to correct provider
+- **Fallback**: Unprefixed IDs use `settings.llm_provider` (openrouter/ollama/groq/hybrid/direct)
 
 **Core Modules**
 
@@ -76,7 +76,8 @@ This fixes binary incompatibilities (e.g., `@rollup/rollup-darwin-*` variants).
 
 `settings.py` - Configuration management
 - **Storage**: `data/settings.json` (persisted, not `.env` only)
-- **LLM Modes**: `openrouter`, `ollama`, `hybrid`, `direct`
+- **LLM Modes**: `openrouter`, `ollama`, `groq`, `hybrid`, `direct`
+- **Enabled Providers**: Toggle which sources are available (OpenRouter, Ollama, Groq, Direct Connections)
 - **Customization**: System prompts for Stage 1/2/3, search query generation
 - **Available Models**: Curated list in `AVAILABLE_MODELS` for UI dropdown
 
@@ -132,8 +133,13 @@ This fixes binary incompatibilities (e.g., `@rollup/rollup-darwin-*` variants).
 - Green-tinted background (`#f0fff0`) to highlight conclusion
 
 `components/Settings.jsx`
-- Configure API keys, council/chairman models, search provider
-- **Hybrid Mode**: Remote/Local toggles for model selection
+- **Sidebar Navigation**: 4-section layout (Council Config, API Keys, System Prompts, General & Search)
+- Configure API keys (OpenRouter, Groq, Ollama, Direct providers)
+- **Available Model Sources**: Toggle which providers are enabled (OpenRouter, Ollama, Groq, Direct Connections)
+- **Council Configuration**:
+  - Per-member Remote/Local toggles for model selection
+  - "I'm Feeling Lucky" button to randomize all models
+  - Rate limit warnings for OpenRouter and Groq configurations
 - Customizable system prompts with reset to defaults
 - Full content fetch slider (0-10 results)
 - Settings saved to `data/settings.json` via backend API
@@ -187,10 +193,12 @@ Fallback regex extracts any "Response X" patterns if format not followed.
 ```
 This class is defined in `index.css` and provides consistent spacing.
 
-### Hybrid Model Format
-Models in hybrid mode use prefix format:
+### Model ID Prefix Format
+Models use prefix format to determine routing:
 - `openrouter:anthropic/claude-sonnet-4` - Cloud model via OpenRouter
 - `ollama:llama3.1:latest` - Local model via Ollama
+- `groq:llama3-70b-8192` - Fast inference via Groq
+- `openai:gpt-4.1`, `anthropic:claude-sonnet-4`, etc. - Direct provider connections
 - Prefix determines routing in `council.py:get_provider_for_model()`
 
 ## Common Gotchas
@@ -332,13 +340,15 @@ curl http://localhost:11434/api/tags
 ## Settings & Configuration
 
 **UI-Configurable:**
-- API keys (OpenRouter, Tavily, Brave, Anthropic, OpenAI, Google, Mistral, DeepSeek)
-- LLM provider mode (openrouter/ollama/hybrid/direct)
-- Council models (multiple selection)
-- Chairman model (single selection)
+- API keys (OpenRouter, Groq, Tavily, Brave, Anthropic, OpenAI, Google, Mistral, DeepSeek)
+- Available Model Sources (OpenRouter, Ollama, Groq, Direct Connections)
+- Council models (multiple selection with Remote/Local toggles per member)
+- Chairman model (single selection with Remote/Local toggle)
+- Search query generator model (with Remote/Local toggle)
 - Search provider (duckduckgo/tavily/brave)
-- Full content results (0-10)
-- System prompts (Stage 1/2/3, search query, title)
+- Full content results (0-5)
+- System prompts (Stage 1/2/3, search query)
+- "I'm Feeling Lucky" - Randomize all models
 
 **Storage Location:** `data/settings.json`
 
@@ -452,10 +462,36 @@ curl http://localhost:11434/api/tags
    - Prefers direct connections over OpenRouter for same model ID
    - Eliminates React "duplicate key" warnings
 
+7. **Settings UI Sidebar Refactor (Nov 29, 2025 Evening - Gemini):**
+   - Replaced single-page scrolling layout with **sidebar navigation**
+   - 4 sections: Council Config, API Keys, System Prompts, General & Search
+   - Left sidebar (220px) with active state highlighting, main panel scrolls independently
+   - Eliminates excessive scrolling, improves organization
+
+8. **Groq Provider Integration (Nov 29, 2025 Evening - Gemini):**
+   - Added `backend/providers/groq.py` with OpenAI-compatible API
+   - Models prefixed with `groq:` (e.g., `groq:llama3-70b-8192`)
+   - Toggle in Available Model Sources section
+   - Rate limits: 30 requests/minute, 14,400 requests/day (Llama models)
+   - API key validation and test functionality
+
+9. **"I'm Feeling Lucky" Feature (Nov 29, 2025 Evening - Gemini):**
+   - Purple gradient button (🎲) to randomize all models
+   - Randomizes council members, chairman, and search query generator
+   - Respects "Show free only" filter
+   - Tries to select unique models for council (refills pool when exhausted)
+   - Auto-sets Remote/Local filters based on selected models
+
+10. **Rate Limit Warning System (Nov 29, 2025 Evening - Gemini):**
+    - Smart warnings based on council configuration
+    - Calculates total requests per run: `(council_members × 2) + 2`
+    - OpenRouter warnings: 🛑 Error for >10 requests/run with 3+ free models (20 RPM limit), ⚠️ Warning for all free models (50 RPD limit)
+    - Groq warnings: ⚠️ Caution for >20 requests/run (30 RPM limit)
+    - Visual banners with icons and actionable messages
+
 **Pending Work:**
-- Settings UI refactoring: Decision needed on layout (Sidebar vs. Tabs) to reduce scrolling
 - Optional optimizations: Settings state simplification, request caching
-- Testing: See `BUGS_AND_OPTIMIZATIONS.md` for comprehensive test checklist
+- Testing: Verify Groq integration, sidebar navigation, "I'm Feeling Lucky" feature
 
 ## AI Coding Best Practices (Lessons Learned)
 
