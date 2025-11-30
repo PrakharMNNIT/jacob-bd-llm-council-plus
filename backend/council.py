@@ -19,6 +19,7 @@ from .providers.mistral import MistralProvider
 from .providers.deepseek import DeepSeekProvider
 from .providers.openrouter import OpenRouterProvider
 from .providers.ollama import OllamaProvider
+from .providers.groq import GroqProvider
 
 # Initialize providers
 PROVIDERS = {
@@ -27,6 +28,7 @@ PROVIDERS = {
     "google": GoogleProvider(),
     "mistral": MistralProvider(),
     "deepseek": DeepSeekProvider(),
+    "groq": GroqProvider(),
     "openrouter": OpenRouterProvider(),
     "ollama": OllamaProvider(),
 }

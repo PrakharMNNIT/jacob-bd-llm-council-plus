@@ -47,6 +47,11 @@ export default function Settings({ onClose, ollamaStatus, onRefreshOllama }) {
   const [isTestingOpenRouter, setIsTestingOpenRouter] = useState(false);
   const [openrouterTestResult, setOpenrouterTestResult] = useState(null);
 
+  // Groq State
+  const [groqApiKey, setGroqApiKey] = useState('');
+  const [isTestingGroq, setIsTestingGroq] = useState(false);
+  const [groqTestResult, setGroqTestResult] = useState(null);
+
   // Ollama State
   const [ollamaBaseUrl, setOllamaBaseUrl] = useState('http://localhost:11434');
   const [ollamaAvailableModels, setOllamaAvailableModels] = useState([]);
@@ -168,6 +173,50 @@ export default function Settings({ onClose, ollamaStatus, onRefreshOllama }) {
     prompts
   ]);
 
+  // Auto-switch filters if provider availability changes
+  useEffect(() => {
+    const isRemoteAvailable = enabledProviders.openrouter || enabledProviders.direct || enabledProviders.groq;
+    const isLocalAvailable = enabledProviders.ollama;
+
+    // Helper to switch filter if needed
+    const getNewFilter = (currentFilter) => {
+      if (currentFilter === 'remote' && !isRemoteAvailable && isLocalAvailable) return 'local';
+      if (currentFilter === 'local' && !isLocalAvailable && isRemoteAvailable) return 'remote';
+      return currentFilter;
+    };
+
+    // Update Council Members
+    setCouncilMemberFilters(prev => {
+      const next = { ...prev };
+      let changed = false;
+      Object.keys(next).forEach(key => {
+        const newFilter = getNewFilter(next[key]);
+        if (newFilter !== next[key]) {
+          next[key] = newFilter;
+          changed = true;
+          // Clear model if filter changed to force re-selection
+          handleCouncilModelChange(parseInt(key), '');
+        }
+      });
+      return changed ? next : prev;
+    });
+
+    // Update Chairman
+    const newChairmanFilter = getNewFilter(chairmanFilter);
+    if (newChairmanFilter !== chairmanFilter) {
+      setChairmanFilter(newChairmanFilter);
+      setChairmanModel('');
+    }
+
+    // Update Search Query Model
+    const newSearchFilter = getNewFilter(searchQueryFilter);
+    if (newSearchFilter !== searchQueryFilter) {
+      setSearchQueryFilter(newSearchFilter);
+      setSearchQueryModel('');
+    }
+
+  }, [enabledProviders, chairmanFilter, searchQueryFilter]); // councilMemberFilters dependency omitted to avoid loops, handled via functional update
+
   const loadSettings = async () => {
     try {
       const data = await api.getSettings();
@@ -186,8 +235,9 @@ export default function Settings({ onClose, ollamaStatus, onRefreshOllama }) {
           data.google_api_key_set || data.mistral_api_key_set || data.deepseek_api_key_set);
 
         setEnabledProviders({
-          openrouter: !!data.openrouter_api_key_set || (!hasDirectConfigured && !ollamaStatus?.connected),
+          openrouter: !!data.openrouter_api_key_set || (!hasDirectConfigured && !ollamaStatus?.connected && !data.groq_api_key_set),
           ollama: ollamaStatus?.connected || false,
+          groq: !!data.groq_api_key_set,
           direct: hasDirectConfigured
         });
       }
@@ -227,6 +277,7 @@ export default function Settings({ onClose, ollamaStatus, onRefreshOllama }) {
         mistral_api_key: '',
         deepseek_api_key: ''
       });
+      setGroqApiKey(''); // Clear Groq key too
 
       // Load available models from all sources
       loadModels();
@@ -367,6 +418,37 @@ export default function Settings({ onClose, ollamaStatus, onRefreshOllama }) {
     }
   };
 
+  const handleTestGroq = async () => {
+    if (!groqApiKey && !settings.groq_api_key_set) {
+      setGroqTestResult({ success: false, message: 'Please enter an API key first' });
+      return;
+    }
+    setIsTestingGroq(true);
+    setGroqTestResult(null);
+    try {
+      // If input is empty but key is configured, test with saved key via generic provider test
+      // Note: backend/providers/groq.py must be registered with id 'groq'
+      const result = await api.testProviderKey('groq', groqApiKey || 'saved');
+      setGroqTestResult(result);
+
+      // Auto-save API key if validation succeeds and a new key was provided
+      if (result.success && groqApiKey) {
+        await api.updateSettings({ groq_api_key: groqApiKey });
+        setGroqApiKey(''); // Clear input after save
+
+        // Reload settings
+        await loadSettings();
+
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
+      }
+    } catch (err) {
+      setGroqTestResult({ success: false, message: 'Test failed' });
+    } finally {
+      setIsTestingGroq(false);
+    }
+  };
+
   const handleTestOllama = async () => {
     setIsTestingOllama(true);
     setOllamaTestResult(null);
@@ -425,6 +507,136 @@ export default function Settings({ onClose, ollamaStatus, onRefreshOllama }) {
       updated[index] = '';
       return updated;
     });
+  };
+
+  // Calculate Rate Limit Warning
+  const getRateLimitWarning = () => {
+    if (!settings || !availableModels || availableModels.length === 0) return null;
+
+    let openRouterFreeCount = 0;
+    let groqCount = 0; // Number of models (council, chairman, search) using Groq
+    const totalCouncilMembers = councilModels.length;
+    let totalRequestsPerRun = (totalCouncilMembers * 2) + 2; // Stage 1, Stage 2, Chairman, Search Query
+
+    // Check OpenRouter free models
+    councilModels.forEach(modelId => {
+      const isRemote = !modelId.includes(':') || modelId.startsWith('openrouter:');
+      if (isRemote) {
+        const modelData = availableModels.find(m => m.id === modelId || m.id === modelId.replace('openrouter:', ''));
+        if (modelData && modelData.is_free) {
+          openRouterFreeCount++;
+        }
+      }
+    });
+
+    // Check Chairman and Search Query Model
+    const chairmanModelData = availableModels.find(m => m.id === chairmanModel || m.id === chairmanModel.replace('openrouter:', ''));
+    if (chairmanModelData && chairmanModelData.is_free && (!chairmanModel.includes(':') || chairmanModel.startsWith('openrouter:'))) {
+        openRouterFreeCount++;
+    }
+
+    const searchQueryModelData = availableModels.find(m => m.id === searchQueryModel || m.id === searchQueryModel.replace('openrouter:', ''));
+    if (searchQueryModelData && searchQueryModelData.is_free && (!searchQueryModel.includes(':') || searchQueryModel.startsWith('openrouter:'))) {
+        openRouterFreeCount++;
+    }
+
+    // Logic for OpenRouter Warnings
+    // OpenRouter: 20 RPM, 50 RPD (without credits)
+    if (openRouterFreeCount > 0) {
+      if (totalRequestsPerRun > 10 && openRouterFreeCount >= 3) { // 10 requests is approx half of 20 RPM
+        return {
+          type: 'error',
+          title: 'High Rate Limit Risk (OpenRouter)',
+          message: `Your council configuration generates ~${totalRequestsPerRun} requests per run, with ${openRouterFreeCount} free OpenRouter models. This may exceed the 20 requests/minute limit. Consider using Groq or Ollama for some members.`
+        };
+      } else if (openRouterFreeCount === totalRequestsPerRun) { // All requests from free OpenRouter
+        return {
+          type: 'warning',
+          title: 'Daily Limit Caution (OpenRouter)',
+          message: 'Free OpenRouter models are limited to 50 requests/day (without credits). Use Groq (14k/day) or Ollama for unlimited usage.'
+        };
+      }
+    }
+
+    // Logic for Groq Warnings
+    // Groq: 30 RPM, 14,400 RPD (for Llama models)
+    if (councilModels.some(id => id.startsWith('groq:'))) groqCount += totalCouncilMembers;
+    if (chairmanModel.startsWith('groq:')) groqCount++;
+    if (searchQueryModel.startsWith('groq:')) groqCount++;
+
+    if (groqCount > 0) {
+      if (totalRequestsPerRun > 20) { // 20 requests is approx two-thirds of 30 RPM
+        return {
+          type: 'warning',
+          title: 'High Concurrency Caution (Groq)',
+          message: `Your council configuration generates ~${totalRequestsPerRun} requests per run using Groq. This might approach the 30 requests/minute limit for Groq. You may experience occasional throttling.`
+        };
+      }
+    }
+
+    return null;
+  };
+
+  const rateLimitWarning = getRateLimitWarning();
+
+  const handleFeelingLucky = () => {
+    // 1. Get pool of available models respecting "Free Only" filter
+    const candidateModels = getFilteredAvailableModels();
+    
+    if (!candidateModels || candidateModels.length === 0) {
+      setError("No models available to randomize! Check your enabled providers.");
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+
+    // Helper to pick random item
+    const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+    // Helper to determine filter type (remote/local) from model ID
+    const getFilterForModel = (modelId) => {
+      return modelId.startsWith('ollama:') ? 'local' : 'remote';
+    };
+
+    // 2. Randomize Council Members (Unique if possible)
+    let remainingModels = [...candidateModels];
+    const newCouncilModels = [];
+    const newMemberFilters = {};
+
+    // We need to fill 'councilModels.length' slots
+    for (let i = 0; i < councilModels.length; i++) {
+      // If we ran out of unique models, refill the pool
+      if (remainingModels.length === 0) {
+        remainingModels = [...candidateModels];
+      }
+      
+      const randomIndex = Math.floor(Math.random() * remainingModels.length);
+      const selectedModel = remainingModels[randomIndex];
+      
+      newCouncilModels.push(selectedModel.id);
+      newMemberFilters[i] = getFilterForModel(selectedModel.id);
+      
+      // Remove selected to avoid duplicates (until we run out)
+      remainingModels.splice(randomIndex, 1);
+    }
+
+    // 3. Randomize Chairman
+    const randomChairman = pickRandom(candidateModels);
+    
+    // 4. Randomize Search Query
+    const randomSearch = pickRandom(candidateModels);
+
+    // Apply Updates
+    setCouncilModels(newCouncilModels);
+    setCouncilMemberFilters(newMemberFilters);
+    
+    setChairmanModel(randomChairman.id);
+    setChairmanFilter(getFilterForModel(randomChairman.id));
+    
+    setSearchQueryModel(randomSearch.id);
+    setSearchQueryFilter(getFilterForModel(randomSearch.id));
+
+    setSuccess(true);
+    setTimeout(() => setSuccess(false), 2000);
   };
 
   const handleAddCouncilMember = () => {
@@ -501,6 +713,14 @@ export default function Settings({ onClose, ollamaStatus, onRefreshOllama }) {
       // Council Configuration (unified)
       setCouncilModels(defaults.council_models);
       setChairmanModel(defaults.chairman_model);
+      
+      // Reset filters to Remote for all default members
+      const defaultFilters = {};
+      defaults.council_models.forEach((_, index) => {
+        defaultFilters[index] = 'remote';
+      });
+      setCouncilMemberFilters(defaultFilters);
+      setChairmanFilter('remote');
 
       // Ollama Base URL
       setOllamaBaseUrl('http://localhost:11434');
@@ -517,7 +737,21 @@ export default function Settings({ onClose, ollamaStatus, onRefreshOllama }) {
         search_query_prompt: defaults.search_query_prompt
       });
 
-      setSuccess(true);
+      // Check if any provider is actually ready to use
+      const hasOpenRouter = settings?.openrouter_api_key_set || openrouterApiKey;
+      const hasOllama = ollamaStatus?.connected;
+      const hasGroq = settings?.groq_api_key_set || groqApiKey;
+      const hasDirect = Object.keys(directKeys).some(k => directKeys[k] || settings?.[k + '_set']);
+
+      if (!hasOpenRouter && !hasOllama && !hasGroq && !hasDirect) {
+        setActiveSection('api_keys');
+        setSuccess(true);
+        // Custom message for this case handled in render or just use generic success with navigation
+        // We'll use a timeout to clear it, but the user is now in the right place
+      } else {
+        setSuccess(true);
+      }
+      
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
       setError('Failed to load default settings');
@@ -691,6 +925,9 @@ export default function Settings({ onClose, ollamaStatus, onRefreshOllama }) {
       if (openrouterApiKey && !openrouterApiKey.startsWith('•')) {
         updates.openrouter_api_key = openrouterApiKey;
       }
+      if (groqApiKey && !groqApiKey.startsWith('•')) {
+        updates.groq_api_key = groqApiKey;
+      }
 
       // Add Direct Provider Keys
       Object.entries(directKeys).forEach(([key, value]) => {
@@ -744,9 +981,16 @@ export default function Settings({ onClose, ollamaStatus, onRefreshOllama }) {
       })));
     }
 
+    // Add Groq models if enabled
+    if (enabledProviders.groq) {
+      const groqModels = directAvailableModels.filter(m => m.provider === 'Groq');
+      models.push(...groqModels);
+    }
+
     // Add direct provider models if master toggle is enabled AND individual provider is enabled
     if (enabledProviders.direct) {
       const filteredDirectModels = directAvailableModels.filter(m => {
+        if (m.provider === 'Groq') return false; // Handled separately above
         const providerKey = m.provider.toLowerCase();
         const individualToggleEnabled = directProviderToggles[providerKey];
         const providerConfigured = isDirectProviderConfigured(m.provider);
@@ -920,6 +1164,18 @@ export default function Settings({ onClose, ollamaStatus, onRefreshOllama }) {
                         </div>
                         <span className="toggle-text">Local (Ollama)</span>
                       </label>
+
+                      <label className="toggle-wrapper">
+                        <div className="toggle-switch">
+                          <input
+                            type="checkbox"
+                            checked={enabledProviders.groq}
+                            onChange={(e) => setEnabledProviders(prev => ({ ...prev, groq: e.target.checked }))}
+                          />
+                          <span className="slider"></span>
+                        </div>
+                        <span className="toggle-text">Groq (Fast Inference)</span>
+                      </label>
                     </div>
 
                     <div className="filter-divider"></div>
@@ -962,96 +1218,124 @@ export default function Settings({ onClose, ollamaStatus, onRefreshOllama }) {
                   </div>
                 </section>
 
-                <section className="settings-section">
-                  <h3>Council Composition</h3>
-                  <div className="model-options-row">
-                    <label className="free-filter-label">
-                      <input
-                        type="checkbox"
-                        checked={showFreeOnly}
-                        onChange={e => setShowFreeOnly(e.target.checked)}
-                      />
-                      Show free OpenRouter models only
-                    </label>
-                    {isLoadingModels && <span className="loading-models">Loading models...</span>}
-                  </div>
-
-                  {/* Council Members */}
-                  <div className="subsection" style={{ marginTop: '20px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <h4 style={{ margin: 0 }}>Council Members</h4>
-                    </div>
-                    <div className="council-members">
-                      {councilModels.map((modelId, index) => {
-                        const memberFilter = getMemberFilter(index);
-                        return (
-                          <div key={index} className="council-member-row">
-                            <span className="member-label">Member {index + 1}</span>
-                            <div className="model-type-toggle">
-                              <button
-                                type="button"
-                                className={`type-btn ${memberFilter === 'remote' ? 'active' : ''}`}
-                                onClick={() => handleMemberFilterChange(index, 'remote')}
-                                disabled={!enabledProviders.openrouter && !enabledProviders.direct}
-                                title={!enabledProviders.openrouter && !enabledProviders.direct ? 'Enable OpenRouter or Direct Connections first' : ''}
-                              >
-                                Remote
-                              </button>
-                              <button
-                                type="button"
-                                className={`type-btn ${memberFilter === 'local' ? 'active' : ''}`}
-                                onClick={() => handleMemberFilterChange(index, 'local')}
-                                disabled={!enabledProviders.ollama || ollamaAvailableModels.length === 0}
-                                title={!enabledProviders.ollama || ollamaAvailableModels.length === 0 ? 'Enable and connect Ollama first' : ''}
-                              >
-                                Local
-                              </button>
-                            </div>
-                            <select
-                              value={modelId}
-                              onChange={e => handleCouncilModelChange(index, e.target.value)}
-                              className="model-select"
-                            >
-                              {renderModelOptions(filterByRemoteLocal(getFilteredAvailableModels(), memberFilter))}
-                              {/* Keep current selection visible even if filtered out */}
-                              {!filterByRemoteLocal(getFilteredAvailableModels(), memberFilter).find(m => m.id === modelId) && (
-                                <option value={modelId}>
-                                  {getAllAvailableModels().find(m => m.id === modelId)?.name || modelId}
-                                </option>
-                              )}
-                            </select>
-                            {index >= 2 && (
-                              <button
-                                type="button"
-                                className="remove-member-button"
-                                onClick={() => handleRemoveCouncilMember(index)}
-                                title="Remove member"
-                              >
-                                ×
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <button
-                      type="button"
-                      className="add-member-button"
-                      onClick={handleAddCouncilMember}
-                      disabled={getFilteredAvailableModels().length === 0 || councilModels.length >= 8}
-                    >
-                      + Add Council Member
-                    </button>
-                    <p className="section-description" style={{ marginTop: '8px', marginBottom: '0' }}>
-                      Max 8 members. With 6+ members, requests are processed in batches.
-                    </p>
-                    {councilModels.length >= 6 && (
-                      <div className="council-size-warning">
-                        ⚠️ <strong>6+ members:</strong> Requests will be processed in batches of 3 to avoid rate limits.
-                      </div>
-                    )}
-                  </div>
-
+                                  <section className="settings-section">
+                                  <h3>Council Composition</h3>
+                                  <div className="model-options-row">
+                                    <div className="model-filter-controls">
+                                      <label className="free-filter-label">
+                                        <input
+                                          type="checkbox"
+                                          checked={showFreeOnly}
+                                          onChange={e => setShowFreeOnly(e.target.checked)}
+                                        />
+                                        Show free OpenRouter models only
+                                        <div className="info-tooltip-container">
+                                          <span className="info-icon">i</span>
+                                          <div className="info-tooltip">
+                                            Free OpenRouter models are limited to 20 requests/minute and 50/day (without credits). Large councils generate many requests at once.
+                                          </div>
+                                        </div>
+                                      </label>
+                                      {isLoadingModels && <span className="loading-models">Loading models...</span>}
+                                    </div>
+                                  </div>
+                                  <div className="lucky-button-container">
+                                    <button
+                                      type="button"
+                                      className="lucky-button"
+                                      onClick={handleFeelingLucky}
+                                      title="Randomize models from enabled sources"
+                                    >
+                                      🎲 I'm Feeling Lucky
+                                    </button>
+                                  </div>                                      
+                                                        {/* Council Members */}                                  <div className="subsection" style={{ marginTop: '20px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                      <h4 style={{ margin: 0 }}>Council Members</h4>
+                                    </div>
+                                    <div className="council-members">
+                                      {councilModels.map((modelId, index) => {
+                                        const memberFilter = getMemberFilter(index);
+                                        return (
+                                          <div key={index} className="council-member-row">
+                                            <span className="member-label">Member {index + 1}</span>
+                                            <div className="model-type-toggle">
+                                              <button
+                                                type="button"
+                                                className={`type-btn ${memberFilter === 'remote' ? 'active' : ''}`}
+                                                onClick={() => handleMemberFilterChange(index, 'remote')}
+                                                disabled={!enabledProviders.openrouter && !enabledProviders.direct}
+                                                title={!enabledProviders.openrouter && !enabledProviders.direct ? 'Enable OpenRouter or Direct Connections first' : ''}
+                                              >
+                                                Remote
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className={`type-btn ${memberFilter === 'local' ? 'active' : ''}`}
+                                                onClick={() => handleMemberFilterChange(index, 'local')}
+                                                disabled={!enabledProviders.ollama || ollamaAvailableModels.length === 0}
+                                                title={!enabledProviders.ollama || ollamaAvailableModels.length === 0 ? 'Enable and connect Ollama first' : ''}
+                                              >
+                                                Local
+                                              </button>
+                                            </div>
+                                            <select
+                                              value={modelId}
+                                              onChange={e => handleCouncilModelChange(index, e.target.value)}
+                                              className="model-select"
+                                            >
+                                              {renderModelOptions(filterByRemoteLocal(getFilteredAvailableModels(), memberFilter))}
+                                              {/* Keep current selection visible even if filtered out */}
+                                              {!filterByRemoteLocal(getFilteredAvailableModels(), memberFilter).find(m => m.id === modelId) && (
+                                                <option value={modelId}>
+                                                  {getAllAvailableModels().find(m => m.id === modelId)?.name || modelId}
+                                                </option>
+                                              )}
+                                            </select>
+                                            {index >= 2 && (
+                                              <button
+                                                type="button"
+                                                className="remove-member-button"
+                                                onClick={() => handleRemoveCouncilMember(index)}
+                                                title="Remove member"
+                                              >
+                                                ×
+                                              </button>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="add-member-button"
+                                      onClick={handleAddCouncilMember}
+                                      disabled={getFilteredAvailableModels().length === 0 || councilModels.length >= 8}
+                                    >
+                                      + Add Council Member
+                                    </button>
+                                    <p className="section-description" style={{ marginTop: '8px', marginBottom: '0' }}>
+                                      Max 8 members. With 6+ members, requests are processed in batches.
+                                    </p>
+                                    {councilModels.length >= 6 && (
+                                      <div className="council-size-warning">
+                                        ⚠️ <strong>6+ members:</strong> Requests will be processed in batches of 3 to avoid rate limits.
+                                      </div>
+                                    )}
+                                    
+                                    {/* Rate Limit Warning Banner */}
+                                    {rateLimitWarning && (
+                                      <div className={`rate-limit-warning ${rateLimitWarning.type}`}>
+                                        <span className="warning-icon">
+                                          {rateLimitWarning.type === 'error' ? '🛑' : '⚠️'}
+                                        </span>
+                                        <div>
+                                          <strong>{rateLimitWarning.title}</strong><br/>
+                                          {rateLimitWarning.message}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
                   {/* Chairman */}
                   <div className="subsection" style={{ marginTop: '24px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -1185,6 +1469,41 @@ export default function Settings({ onClose, ollamaStatus, onRefreshOllama }) {
                   )}
                   <p className="api-key-hint">
                     Get key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai</a>
+                  </p>
+                </div>
+
+                {/* Groq */}
+                <div className="api-key-section">
+                  <label>Groq API Key</label>
+                  <div className="api-key-input-row">
+                    <input
+                      type="password"
+                      placeholder={settings?.groq_api_key_set ? '••••••••••••••••' : 'Enter API key'}
+                      value={groqApiKey}
+                      onChange={(e) => {
+                        setGroqApiKey(e.target.value);
+                        setGroqTestResult(null);
+                      }}
+                      className={settings?.groq_api_key_set && !groqApiKey ? 'key-configured' : ''}
+                    />
+                    <button
+                      className="test-button"
+                      onClick={handleTestGroq}
+                      disabled={!groqApiKey && !settings?.groq_api_key_set || isTestingGroq}
+                    >
+                      {isTestingGroq ? 'Testing...' : (settings?.groq_api_key_set && !groqApiKey ? 'Retest' : 'Test')}
+                    </button>
+                  </div>
+                  {settings?.groq_api_key_set && !groqApiKey && (
+                    <div className="key-status set">✓ API key configured</div>
+                  )}
+                  {groqTestResult && (
+                    <div className={`test-result ${groqTestResult.success ? 'success' : 'error'}`}>
+                      {groqTestResult.message}
+                    </div>
+                  )}
+                  <p className="api-key-hint">
+                    Get key at <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">console.groq.com</a>
                   </p>
                 </div>
 
@@ -1525,7 +1844,13 @@ export default function Settings({ onClose, ollamaStatus, onRefreshOllama }) {
 
         <div className="settings-footer">
           {error && <div className="settings-error">{error}</div>}
-          {success && <div className="settings-success">Settings saved!</div>}
+          {success && (
+            <div className="settings-success">
+              {activeSection === 'api_keys' && !settings?.openrouter_api_key_set && !ollamaStatus?.connected 
+                ? 'Defaults loaded. Please configure an API Key.' 
+                : 'Settings saved!'}
+            </div>
+          )}
           <button className="reset-button" type="button" onClick={handleResetToDefaults}>
             Reset to Defaults
           </button>

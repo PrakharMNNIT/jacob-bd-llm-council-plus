@@ -298,6 +298,7 @@ class UpdateSettingsRequest(BaseModel):
     google_api_key: Optional[str] = None
     mistral_api_key: Optional[str] = None
     deepseek_api_key: Optional[str] = None
+    groq_api_key: Optional[str] = None
 
     # Enabled Providers
     enabled_providers: Optional[Dict[str, bool]] = None
@@ -341,6 +342,7 @@ async def get_app_settings():
         "google_api_key_set": bool(settings.google_api_key),
         "mistral_api_key_set": bool(settings.mistral_api_key),
         "deepseek_api_key_set": bool(settings.deepseek_api_key),
+        "groq_api_key_set": bool(settings.groq_api_key),
 
         # Enabled Providers
         "enabled_providers": settings.enabled_providers,
@@ -449,6 +451,8 @@ async def update_app_settings(request: UpdateSettingsRequest):
         updates["mistral_api_key"] = request.mistral_api_key
     if request.deepseek_api_key is not None:
         updates["deepseek_api_key"] = request.deepseek_api_key
+    if request.groq_api_key is not None:
+        updates["groq_api_key"] = request.groq_api_key
 
     # Enabled Providers
     if request.enabled_providers is not None:

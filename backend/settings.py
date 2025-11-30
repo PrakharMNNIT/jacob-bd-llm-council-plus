@@ -24,6 +24,7 @@ DEFAULT_SEARCH_QUERY_MODEL = "google/gemini-2.0-flash-001"
 DEFAULT_ENABLED_PROVIDERS = {
     "openrouter": True,
     "ollama": False,
+    "groq": False,
     "direct": False  # Master toggle for all direct connections
 }
 
@@ -33,7 +34,8 @@ DEFAULT_DIRECT_PROVIDER_TOGGLES = {
     "anthropic": False,
     "google": False,
     "mistral": False,
-    "deepseek": False
+    "deepseek": False,
+    "groq": False
 }
 
 
@@ -88,6 +90,7 @@ class Settings(BaseModel):
     google_api_key: Optional[str] = None
     mistral_api_key: Optional[str] = None
     deepseek_api_key: Optional[str] = None
+    groq_api_key: Optional[str] = None
 
     # Ollama Settings
     ollama_base_url: str = "http://localhost:11434"
