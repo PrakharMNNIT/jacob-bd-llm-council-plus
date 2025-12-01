@@ -173,7 +173,7 @@
 .error-message {
   color: var(--text-secondary);
   font-size: 14px;
-  font-family: monospace;
+  font-family: var(--font-code);
 }
 
 /* Animation for loading state (pulsing tabs) */
