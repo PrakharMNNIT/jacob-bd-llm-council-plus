@@ -39,13 +39,15 @@
 
 .app-footer {
   position: absolute;
-  bottom: 40px;
+  bottom: 60px;
   display: flex;
   align-items: center;
   gap: 12px;
   font-size: 13px;
   color: var(--text-muted);
   font-weight: 400;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .footer-separator {
@@ -97,7 +99,7 @@
 
 .hero-footer {
   position: absolute;
-  bottom: 140px;
+  bottom: 60px;
   display: flex;
   align-items: center;
   gap: 12px;

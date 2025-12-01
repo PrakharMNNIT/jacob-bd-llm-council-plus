@@ -31,6 +31,14 @@
   letter-spacing: -0.5px;
 }
 
+.title-plus {
+  background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: 800;
+}
+
 .sidebar-actions-header {
   display: flex;
   gap: 8px;

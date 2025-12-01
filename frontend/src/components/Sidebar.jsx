@@ -37,7 +37,7 @@ export default function Sidebar({
   return (
     <div className="sidebar">
       <div className="sidebar-header">
-        <div className="sidebar-title">LLM Council Plus</div>
+        <div className="sidebar-title">LLM Council <span className="title-plus">Plus</span></div>
         <div className="sidebar-actions-header">
           <button 
             className="icon-button" 
