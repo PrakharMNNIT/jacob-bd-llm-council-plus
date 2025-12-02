@@ -47,19 +47,20 @@ const getModelDisplayName = (modelId) => {
     if (!modelId) return 'Model';
     if (modelId.startsWith('placeholder')) return 'Council Member';
 
-    // Remove provider prefixes if present (e.g., "openai/", "anthropic/")
-    let name = modelId.split('/').pop();
+    let name = modelId;
 
-    // Remove "ollama:" prefix if present
-    name = name.replace(/^ollama:/, '');
+    // Remove :free suffix first (from OpenRouter free models)
+    name = name.replace(/:free$/, '');
 
-    // Remove colon-based prefixes (e.g., "anthropic:claude...", "ollama:llama3", "openrouter:...")
+    // Remove provider prefixes (e.g., "openrouter:", "ollama:", "groq:")
     if (name.includes(':')) {
-        name = name.split(':').pop();
+        name = name.split(':').slice(1).join(':');
     }
 
-    // Remove :free suffix if present (from OpenRouter free models)
-    name = name.replace(/:free$/, '');
+    // Remove path-based prefixes (e.g., "openai/", "anthropic/")
+    if (name.includes('/')) {
+        name = name.split('/').pop();
+    }
 
     return name;
 };
