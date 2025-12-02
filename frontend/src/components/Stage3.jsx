@@ -1,7 +1,7 @@
-import ReactMarkdown from 'react-markdown';
 import { getModelVisuals, getShortModelName } from '../utils/modelHelpers';
-import './Stage3.css';
+import ThinkBlockRenderer from './ThinkBlockRenderer';
 import StageTimer from './StageTimer';
+import './Stage3.css';
 
 export default function Stage3({ finalResponse, startTime, endTime }) {
   if (!finalResponse) {
@@ -33,11 +33,13 @@ export default function Stage3({ finalResponse, startTime, endTime }) {
           </div>
         </div>
         <div className="final-text markdown-content">
-          <ReactMarkdown>
-            {typeof finalResponse?.response === 'string'
-              ? finalResponse.response
-              : String(finalResponse?.response || 'No response')}
-          </ReactMarkdown>
+          <ThinkBlockRenderer
+            content={
+              typeof finalResponse?.response === 'string'
+                ? finalResponse.response
+                : String(finalResponse?.response || 'No response')
+            }
+          />
         </div>
       </div>
     </div>

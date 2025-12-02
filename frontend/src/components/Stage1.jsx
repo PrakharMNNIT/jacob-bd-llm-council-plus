@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import ReactMarkdown from 'react-markdown';
 import { getModelVisuals, getShortModelName } from '../utils/modelHelpers';
-import './Stage1.css';
-
+import ThinkBlockRenderer from './ThinkBlockRenderer';
 import StageTimer from './StageTimer';
+import './Stage1.css';
 
 export default function Stage1({ responses, startTime, endTime }) {
   const [activeTab, setActiveTab] = useState(0);
@@ -96,11 +95,13 @@ export default function Stage1({ responses, startTime, endTime }) {
           </div>
         ) : (
           <div className="response-text markdown-content">
-            <ReactMarkdown>
-              {typeof currentResponse.response === 'string'
-                ? currentResponse.response
-                : String(currentResponse.response || 'No response')}
-            </ReactMarkdown>
+            <ThinkBlockRenderer
+              content={
+                typeof currentResponse.response === 'string'
+                  ? currentResponse.response
+                  : String(currentResponse.response || 'No response')
+              }
+            />
           </div>
         )}
       </div>
